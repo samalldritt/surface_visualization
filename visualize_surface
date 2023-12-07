@@ -1,0 +1,147 @@
+#!/usr/bin/env python
+
+import sys
+import os
+import numpy as np
+import argparse
+from brainspace.mesh.mesh_io import read_surface
+from brainspace.utils.parcellation import map_to_labels
+from brainspace.datasets import load_group_fc, load_parcellation, load_conte69
+from brainspace.plotting import plot_hemispheres
+import nibabel as nb
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+import matplotlib.colors as colors
+from matplotlib.colors import ListedColormap
+
+def load_data(lh_data_dir, rh_data_dir):
+    lh_data = np.loadtxt(lh_data_dir)
+    rh_data = np.loadtxt(rh_data_dir)
+    data = np.vstack((lh_data, rh_data))
+    return data
+
+def get_parcellations(parcellation):
+    script_dir = os.path.dirname(os.path.realpath(__file__))
+    # Takes in parcellation type and returns numpy data array for lh and rh from label.gii file
+    if parcellation == "markov":
+        lh_markov = nb.load(
+            os.path.join(script_dir, "surfaces/markov/L.MarkovCC12_M132_91-area.32k_fs_LR.label.gii")
+        )
+        rh_markov = nb.load(
+            os.path.join(script_dir, "surfaces/markov/R.MarkovCC12_M132_91-area.32k_fs_LR.label.gii")
+        )
+        lh_markov_data = lh_markov.agg_data()
+        rh_markov_data = rh_markov.agg_data()
+        data = np.vstack((lh_markov_data, rh_markov_data))
+
+    if parcellation == "bezgin":
+        lh_bezgin = nb.load(os.path.join(script_dir, "surfaces/bezgin/L.BezginTo7Networks.32k_fs_LR.label.gii"))
+        rh_bezgin = nb.load(os.path.join(script_dir, "surfaces/bezgin/R.BezginTo7Networks.32k_fs_LR.label.gii"))
+        lh_bezgin_data = lh_bezgin.agg_data()
+        rh_bezgin_data = rh_bezgin.agg_data()
+        data = np.vstack((lh_bezgin_data, rh_bezgin_data))
+
+    if parcellation == "mesulam":
+        lh_mesulam = nb.load(
+            os.path.join(script_dir, "surfaces/mesulam/L.cytoarchitectural_class.human.32k_fs_LR.func.gii")
+        )
+        rh_mesulam = nb.load(
+            os.path.join(script_dir, "surfaces/mesulam/R.cytoarchitectural_class.human.32k_fs_LR.func.gii")
+        )
+        lh_mesulam_data = lh_mesulam.agg_data()
+        rh_mesulam_data = rh_mesulam.agg_data()
+        data = np.vstack((lh_mesulam_data, rh_mesulam_data))
+
+    if parcellation == "aparc":
+        lh_aparc = nb.load(os.path.join(script_dir, "surfaces/aparc/fs_LR.aparc.L.32k.func.gii"))
+        rh_aparc = nb.load(os.path.join(script_dir, "surfaces/aparc/fs_LR.aparc.R.32k.func.gii"))
+        lh_aparc_data = lh_aparc.agg_data()
+        rh_aparc_data = rh_aparc.agg_data()
+        data = np.vstack((lh_aparc_data, rh_aparc_data))
+
+    # Can add more parcellations later
+
+    return data
+
+
+def map_data_to_labels(labels, data):
+    lh_data = map_to_labels(labels[0,], data[0,])
+    rh_data = map_to_labels(labels[1,], data[1,])
+    data = np.vstack((lh_data, rh_data))
+    data = np.reshape(data, (-1))
+    return data
+
+
+def plot_surface(array, color_map, color_range, species, save_string):
+    script_dir = os.path.dirname(os.path.realpath(__file__))
+    # Plots the data on the surfaces and then saves the image
+    if species == "monkey":
+        surf_lh = read_surface(
+            os.path.join(script_dir, "surfaces/markov/MacaqueYerkes19.L.inflated.32k_fs_LR.surf.gii"), itype="gii"
+        )
+        surf_rh = read_surface(
+            os.path.join(script_dir, "surfaces/markov/MacaqueYerkes19.R.inflated.32k_fs_LR.surf.gii")
+        )
+    elif species == "human":
+        surf_lh = read_surface(
+            os.path.join(script_dir, "surfaces/alignment_macaque-human/surfaces/Human/32k_fs_LR/S1200.L.inflated_MSMAll.32k_fs_LR.surf.gii")
+        )
+        surf_rh = read_surface(
+            os.path.join(script_dir, "surfaces/alignment_macaque-human/surfaces/Human/32k_fs_LR/S1200.R.inflated_MSMAll.32k_fs_LR.surf.gii")
+        )
+
+    # Plot the hemispheres using the array of colors
+    plot_hemispheres(
+        surf_lh,
+        surf_rh,
+        array_name=array,
+        size=(1200, 200),
+        scale=(3, 3),
+        cmap=color_map,
+        interactive=True,
+        zoom=1.5,
+        color_bar=True,
+        transparent_bg=True,
+        screenshot=True,
+        filename=save_string,
+        color_range=color_range,
+    )
+
+    return
+
+
+def main(args):
+    label_data = load_data(args.lh_data, args.rh_data)
+    parcellation_data = get_parcellations(args.parcellation)
+    mapped_data = map_data_to_labels(label_data, parcellation_data)
+    plot_surface(
+        array=mapped_data,
+        color_map=args.color_map,
+        color_range=(args.color_range_min, args.color_range_max),
+        species=args.species,
+        save_string=args.output
+    )
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Visualize surfaces')
+
+    parser.add_argument('--parcellation', required=True, choices=['bezgin', 'markov', 'mesulam', 'aparc'], help='Description of parcellation argument')
+    parser.add_argument('--species', required=True, choices=['human', 'monkey'], help='Description of species argument')
+    parser.add_argument('--output', required=True, help='Description of save_string argument')
+    parser.add_argument('--color-map', required=False, default='viridis', help='Description of color_map argument')
+    parser.add_argument('--color-range-min', required=False, help='Description of color_range_min argument')
+    parser.add_argument('--color-range-max', required=False, help='Description of color_range_max argument')
+    parser.add_argument('--lh-data', required=True, help='Description of lh_data_dir argument')
+    parser.add_argument('--rh-data', required=True, help='Description of rh_data_dir argument')
+
+    args = parser.parse_args()
+
+    if args.color_range_min == None:
+        lh_min = np.min(np.loadtxt(args.lh_data))
+        rh_min = np.min(np.loadtxt(args.rh_data))
+        args.color_range_min = min([lh_min, rh_min])
+    if args.color_range_max == None:
+        lh_max = np.max(np.loadtxt(args.lh_data))
+        rh_max = np.max(np.loadtxt(args.rh_data))
+        args.color_range_max = max([lh_max, rh_max])
+    main(args)
